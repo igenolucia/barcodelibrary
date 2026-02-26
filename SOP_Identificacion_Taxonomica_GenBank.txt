@@ -1,0 +1,175 @@
+================================================================================
+  PROTOCOLO DE USO ESTÁNDAR (SOP)
+  IDENTIFICACIÓN TAXONÓMICA MEDIANTE GENBANK
+================================================================================
+Documento de referencia para el personal del centro de investigación (CSIC).
+Versión: 1.0 | Formato: texto plano | Uso: guía oficial de operación del script.
+
+--------------------------------------------------------------------------------
+1. OBJETIVO DEL PROTOCOLO
+--------------------------------------------------------------------------------
+
+Este protocolo describe el uso del script de identificación taxonómica basado en
+GenBank/NCBI. El script automatiza:
+
+  (a) La identificación molecular mediante BLASTn contra la base de datos
+      nucleótidos (nt) de NCBI, seleccionando el hit con mayor porcentaje de
+      identidad para cada secuencia de consulta.
+
+  (b) La recuperación de metadatos asociados al registro del mejor hit en
+      GenBank, mediante la API rentrez: información taxonómica (especie, familia),
+      biogeográfica (localidad del ejemplar) y de publicación (país del
+      laboratorio cuando la localidad no está disponible).
+
+El resultado es una tabla en formato CSV lista para revisión y archivo, con
+todas las celdas rellenadas (sin valores vacíos) según el protocolo de reporte
+del centro.
+
+--------------------------------------------------------------------------------
+2. REQUISITOS
+--------------------------------------------------------------------------------
+
+  • Software: R (versión 4.0 o superior recomendada) y RStudio.
+  • Conexión a internet: obligatoria durante toda la ejecución (consultas BLAST
+    y descarga de registros GenBank).
+  • Librerías R necesarias (el script las instala y carga automáticamente si
+    faltan):
+      - ape: lectura de archivos FASTA y manipulación de secuencias.
+      - rentrez: acceso a las bases de datos de NCBI (GenBank).
+      - annotate: ejecución de BLASTn contra la base nt.
+      - dplyr: manejo de tablas de resultados.
+      - stringr: recomendada para posibles extensiones o procesamiento de
+        cadenas de texto (no estrictamente necesaria en la versión actual).
+
+  • Entrada: uno o más archivos FASTA con secuencias de nucleótidos (p. ej.
+    exportados desde Geneious u otro software de alineación).
+
+--------------------------------------------------------------------------------
+3. PROCEDIMIENTO PASO A PASO
+--------------------------------------------------------------------------------
+
+  Paso 1 — Ejecución del script y selección de archivos FASTA
+
+    1.1. Abrir RStudio y cargar el script (File > Open File o ejecutar
+         source("ruta/al/script_genebank.R")).
+    1.2. Ejecutar el script completo (Ctrl+Shift+Enter o Source).
+    1.3. Cuando aparezca la ventana de selección de archivos, elegir uno o
+         varios archivos FASTA que contengan las secuencias a identificar.
+         Aceptar con "Abrir" (o equivalente). Si se cancela o no se selecciona
+         ningún archivo, el script se detendrá con un mensaje de error.
+
+  Paso 2 — Selección interactiva de la carpeta de destino
+
+    2.1. Tras seleccionar los FASTA, se abrirá una segunda ventana para
+         elegir la carpeta donde se guardará el archivo CSV de resultados.
+    2.2. Seleccionar la carpeta deseada y confirmar. Si se cancela, el script
+         se detendrá. El nombre del archivo se asigna automáticamente (véase
+         sección 6. Trazabilidad).
+
+  Paso 3 — Seguimiento del proceso en la consola de RStudio
+
+    3.1. En la consola se mostrará el número total de secuencias a analizar.
+    3.2. Por cada secuencia, el script imprimirá una línea con:
+           - Nombre de la secuencia (ID).
+           - Longitud en pares de bases (bp).
+           - Porcentaje de similitud del mejor hit obtenido con BLASTn.
+         Ejemplo: "Analizando Muestra_01 | Longitud: 658 bp | Similitud: 99.2%"
+    3.3. El proceso puede tardar varios minutos según el número de secuencias
+         y la carga del servidor NCBI. No cerrar R ni interrumpir la sesión hasta
+         que aparezca el mensaje de resultados guardados y se muestre la tabla
+         en consola.
+
+--------------------------------------------------------------------------------
+4. ESTRUCTURA DE LOS RESULTADOS (DICCIONARIO DE COLUMNAS)
+--------------------------------------------------------------------------------
+
+El archivo CSV de salida contiene exactamente 7 columnas, con el siguiente
+significado:
+
+  ID_Secuencia
+    Identificador de la secuencia de consulta, tal como aparece en el archivo
+    FASTA (el script limpia automáticamente texto extra añadido por algunos
+    programas, conservando la primera palabra o identificador principal).
+
+  Especie_Sugerida
+    Nombre de la especie correspondiente al mejor hit de BLASTn, extraído del
+    campo ORGANISM del registro GenBank.
+
+  Familia
+    Categoría taxonómica a nivel familia, extraída de la línea de taxonomía
+    bajo ORGANISM (el taxón cuyo nombre termina en "-idae").
+
+  Localidad
+    Ubicación geográfica del ejemplar del que procede la secuencia de referencia,
+    obtenida de los campos /country o /geo_loc_name del registro GenBank.
+
+  Publicacion_Info
+    País (o última ubicación) del laboratorio o institución que envió la
+    secuencia a GenBank, extraído del bloque JOURNAL que contiene "Submitted".
+    Sirve como información de respaldo cuando Localidad no está disponible.
+
+  Similitud_Perc
+    Porcentaje de identidad entre la secuencia de consulta y el mejor hit
+    (calculado a partir de los datos de alineación BLAST).
+
+  Accession_GenBank
+    Número de acceso del registro en GenBank (p. ej. MN123456) del mejor hit
+    utilizado para extraer los metadatos.
+
+  Nota importante: El script sustituye cualquier dato ausente por la etiqueta
+  'No disponible' para evitar celdas vacías y cumplir con el protocolo de
+  reporte del centro. Ninguna celda del CSV quedará en blanco.
+
+--------------------------------------------------------------------------------
+5. CLÁUSULA DE MODIFICACIONES MANUALES
+--------------------------------------------------------------------------------
+
+Un usuario con conocimientos básicos de R puede adaptar el script a necesidades
+locales editando las siguientes partes:
+
+  5.1. Umbral de similitud
+       El script utiliza actualmente el mejor hit por porcentaje de identidad
+       (sin filtrar por un mínimo). Para considerar solo hits por encima de un
+       umbral (p. ej. 90%), localizar en el script la función obtener_mejor_
+       genbank y, tras calcular la variable similitud (o pident), añadir una
+       condición: si similitud < 90 (o el valor deseado), devolver el objeto
+       out con valores por defecto ("Sin coincidencias", NA, etc.) en lugar
+       de usar ese hit. Así solo se aceptan resultados por encima del umbral.
+
+  5.2. Tiempo de espera entre consultas (evitar bloqueos del servidor)
+       Para reducir el riesgo de bloqueo por exceso de peticiones a NCBI, se
+       puede introducir una pausa entre secuencias. En la PARTE 4 (bucle
+       principal), justo después de la línea que llama a obtener_mejor_genbank
+       (secuencia), añadir:
+           Sys.sleep(1)
+       (o Sys.sleep(2) para 2 segundos). Esto introduce un retardo entre cada
+       consulta BLAST y cada descarga de registro GenBank.
+
+  5.3. Nombre por defecto del archivo de salida
+       En la PARTE 5 (Exportar resultados), la variable nombre_base define el
+       nombre del archivo CSV. Por defecto:
+           nombre_base <- "Resultados_Identificacion_GenBank.csv"
+       Se puede cambiar la cadena entre comillas al nombre deseado (conservando
+       la extensión .csv). La lógica de añadir la fecha cuando el archivo ya
+       existe se aplica igualmente al nuevo nombre.
+
+--------------------------------------------------------------------------------
+6. TRAZABILIDAD
+--------------------------------------------------------------------------------
+
+Para evitar la pérdida de datos previos, el script comprueba si el archivo de
+salida (con el nombre por defecto) ya existe en la carpeta de destino. En ese
+caso, añade automáticamente la fecha actual al nombre del archivo, en formato
+año_mes_día (ej. Resultados_Identificacion_GenBank_2026_02_25.csv). De este
+modo no se sobrescriben resultados anteriores y se mantiene una trazabilidad
+clara por fecha de ejecución.
+
+--------------------------------------------------------------------------------
+FIN DEL PROTOCOLO
+--------------------------------------------------------------------------------
+
+Documento generado como guía oficial para el uso del script de identificación
+taxonómica mediante GenBank. Cualquier modificación sustancial del script debe
+ser documentada y, si corresponde, reflejada en una revisión de este SOP.
+
+================================================================================
