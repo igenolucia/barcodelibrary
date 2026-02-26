@@ -2,8 +2,6 @@
   PROTOCOLO DE USO ESTÁNDAR (SOP)
   IDENTIFICACIÓN TAXONÓMICA MEDIANTE GENBANK
 ================================================================================
-Documento de referencia para el personal del centro de investigación (CSIC).
-Versión: 1.0 | Formato: texto plano | Uso: guía oficial de operación del script.
 
 --------------------------------------------------------------------------------
 1. OBJETIVO DEL PROTOCOLO
@@ -21,9 +19,7 @@ GenBank/NCBI. El script automatiza:
       biogeográfica (localidad del ejemplar) y de publicación (país del
       laboratorio cuando la localidad no está disponible).
 
-El resultado es una tabla en formato CSV lista para revisión y archivo, con
-todas las celdas rellenadas (sin valores vacíos) según el protocolo de reporte
-del centro.
+El resultado es una tabla en formato CSV lista para revisión.
 
 --------------------------------------------------------------------------------
 2. REQUISITOS
@@ -83,8 +79,7 @@ del centro.
 4. ESTRUCTURA DE LOS RESULTADOS (DICCIONARIO DE COLUMNAS)
 --------------------------------------------------------------------------------
 
-El archivo CSV de salida contiene exactamente 7 columnas, con el siguiente
-significado:
+El archivo CSV de salida contine 7 columnas con la siguiente información:
 
   ID_Secuencia
     Identificador de la secuencia de consulta, tal como aparece en el archivo
