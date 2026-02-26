@@ -9,7 +9,7 @@ La principal ventaja de esta herramienta es la **automatización del proceso de 
 * **Script de consulta (R):** Automatización de la conexión con la API de GenBank y ejecución de búsquedas.
 * **Licencia:** MIT License (Código abierto para investigación).
 
-## 🚀 Guía Rápida de Uso (Quick Start)
+## 🚀 Guía Rápida de Uso
 
 Para ejecutar este flujo de trabajo, sigue estos pasos:
 
