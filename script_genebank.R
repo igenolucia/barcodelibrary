@@ -7,7 +7,7 @@
 # localidad, publicacion_info) desde el registro completo en GenBank vía rentrez.
 # Celdas sin dato se rellenan con 'No disponible' (protocolo de reporte).
 #
-# Paquetes: ape, rentrez, annotate (BLAST), dplyr.
+# Paquetes: ape, rentrez, annotate (BLAST), dplyr.""
 #
 # =============================================================================
 
