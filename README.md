@@ -1,8 +1,8 @@
 # Barcode Library 🧬
 
-Bienvenido/a a **Barcode Library**, un repositorio diseñado para alojar un flujo de trabajo (pipeline) bioinformático automatizado y reproducible para el procesamiento de secuencias de ADN (DNA barcoding).
+Esto es **Barcode Library**, un repositorio diseñado para alojar un flujo de trabajo (pipeline) bioinformático automatizado y reproducible para el procesamiento de secuencias de ADN (DNA barcoding).
 
-Este proyecto está pensado para agilizar las etapas computacionales del trabajo de laboratorio. El flujo de trabajo cubierto por estos scripts **comienza una vez obtenidos los archivos `.fasta`** (tras las fases previas de extracción de ADN, amplificación, secuenciación y alineamiento en software como Geneious).
+Este proyecto está pensado para agilizar las etapas computacionales del trabajo de laboratorio. El flujo de trabajo cubierto por estos scripts **comienza una vez obtenidos los archivos `.fasta`** de las secuencias (tras las fases previas de extracción de ADN, amplificación, secuenciación y alineamiento en software como Geneious).
 
 ## Flujo de Trabajo y Estructura del Repositorio
 
@@ -26,3 +26,5 @@ El proyecto está modularizado para reflejar el orden secuencial de los análisi
         ├── 📄 README.md         
         ├── 📜 limpiador_fasta.R    
         └── 📜 identificacion_bold.R
+
+Las siguientes fases de análisis filogenético y visualización de resultados están en proceso.
