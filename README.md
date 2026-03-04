@@ -22,9 +22,13 @@ El proyecto está modularizado para reflejar el orden secuencial de los análisi
     │   ├── 📄 README.md         
     │   └── 📜 blast_genbank_v1.R   
     │
-    └── 📁 bold/
-        ├── 📄 README.md         
-        ├── 📜 limpiador_fasta.R    
-        └── 📜 identificacion_bold.R
+    ├── 📁 bold/
+    │   ├── 📄 README.md         
+    │   ├── 📜 limpiador_fasta.R    
+    │   └── 📜 identificacion_bold.R
+    │
+    └── 📁 consenso/             <-- Unificación y resolución de conflictos
+        ├── 📄 README.md
+        └── 📜 merge_resultados.R
 
 Las siguientes fases de análisis filogenético y visualización de resultados están en proceso.
