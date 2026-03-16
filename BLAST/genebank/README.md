@@ -26,7 +26,7 @@ Al ejecutar el script, se genera una **tabla** que integra:
 
 * **Asignación taxonómica**: Identificación vinculada a cada secuencia consultada (Especie y Familia).
 * **Métricas de coincidencia**: Porcentaje de similitud real detectado para cada secuencia individual.
-* **Metadatos (Protocolo CSIC)**: Información detallada que incluye el código de acceso (Accession), la **localidad** de origen de la secuencia de referencia y la **información bibliográfica** o publicación asociada.
+* **Metadatos**: Información detallada que incluye el código de acceso (Accession), la **localidad** de origen de la secuencia de referencia y la **información bibliográfica** o publicación asociada.
 
   El script incluye un **umbral** de identidad (threshold) ajustable, configurado por defecto al **90%**.
 
