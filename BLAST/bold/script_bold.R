@@ -1,6 +1,5 @@
 # =============================================================================
 # Script: Procesar resultados CSV de BOLD Systems y generar tabla estandarizada
-# Usa: dplyr, rvest, stringr, utils (file.choose, choose.dir)
 # =============================================================================
 
 if (!requireNamespace("dplyr", quietly = TRUE)) install.packages("dplyr")
@@ -11,7 +10,7 @@ library(rvest)
 library(stringr)
 
 # -----------------------------------------------------------------------------
-# 1. Leer el archivo CSV tal cual
+# 1. Leer el archivo CSV 
 # -----------------------------------------------------------------------------
 cat("Selecciona el archivo CSV de resultados de BOLD...\n")
 ruta_csv <- file.choose()
@@ -24,9 +23,23 @@ cat("Filas leídas:", nrow(df_crudo), "\n")
 # -----------------------------------------------------------------------------
 # 2. Filtrar el Top Hit usando los nombres que R asigna por defecto
 # -----------------------------------------------------------------------------
+# Pedir código al usuario por consola
+cat("\n")
+codigo_excluir <- readline(prompt="¿Qué código ID deseas excluir? (Ej: CICOL). Si quieres ver todos, pulsa Enter sin escribir nada: ")
+codigo_excluir <- trimws(codigo_excluir) # Quitar espacios extra
+
 datos <- df_crudo %>%
+  # 1. Ignorar hits sin taxonomía válida
+  filter(!is.na(Species) & trimws(Species) != "", 
+         !is.na(Family) & trimws(Family) != "") %>%
+  # 2. Filtro dinámico opcional: excluye solo si el usuario ha definido un código
+  filter(codigo_excluir == "" | !grepl(codigo_excluir, PID..BIN., ignore.case = TRUE)) %>%
+  # 3. Agrupar por secuencia y ordenar por porcentaje de similitud
   group_by(Query.ID) %>%
-  slice_max(order_by = ID., n = 1, with_ties = FALSE) %>%
+  arrange(desc(ID.), .by_group = TRUE) %>%
+  # 4. Etiquetar el orden del hit (1, 2, 3...) y quedarse con los 5 primeros
+  mutate(Hit_Extraido = row_number()) %>%
+  slice_head(n = 5) %>%
   ungroup()
 cat("Secuencias únicas:", nrow(datos), "\n")
 
@@ -96,7 +109,8 @@ tabla_final <- datos %>%
     Especie_Sugerida = ifelse(is.na(Species) | Species == "", "No disponible", Species),
     Similitud_Porcentaje = ID.,
     Codigo_Acceso = ifelse(is.na(id_puro) | id_puro == "", "No disponible", id_puro),
-    Localizacion = ifelse(is.na(localizacion) | localizacion == "", "No disponible", localizacion)
+    Localizacion = ifelse(is.na(localizacion) | localizacion == "", "No disponible", localizacion),
+    Hit_Extraido = Hit_Extraido
   )
 
 # -----------------------------------------------------------------------------
