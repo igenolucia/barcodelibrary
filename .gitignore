@@ -3,3 +3,5 @@
 *.Rhistory 
 .RData 
 PROTOCOLO_INTERNO_GENBANK.txt
+filogenia/
+data/
