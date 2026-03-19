@@ -234,6 +234,7 @@ obtener_mejor_genbank <- function(secuencia) {
 # y acumulación de filas para la tabla final.
 
 resultados <- vector("list", n_total)
+umbral_similitud <- 90
 
 for (i in seq_len(n_total)) {
   nombre_sec <- nombres_secuencias[i]
@@ -246,7 +247,7 @@ for (i in seq_len(n_total)) {
   )
 
   similitud <- if (length(gb$similitud) == 1 && !is.na(gb$similitud)) gb$similitud else 0
-  cat("  Analizando ", nombre_sec, " | Longitud: ", longitud_bp, " bp | Similitud: ", similitud, "%\n", sep = "")
+  cat(sprintf('\rProcesando secuencia %d/%d... (Analizando: %s)', i, n_total, nombre_sec))
 
   # Protocolo CSIC: ninguna celda vacía ni NA; usar 'No disponible' cuando falte el dato
   especie_txt   <- if (is.na(gb$especie) || !nzchar(trimws(gb$especie))) "No disponible" else trimws(gb$especie)
@@ -254,6 +255,12 @@ for (i in seq_len(n_total)) {
   localidad_txt <- if (is.na(gb$localidad) || !nzchar(trimws(gb$localidad))) "No disponible" else trimws(gb$localidad)
   publicacion_txt <- if (is.na(gb$publicacion_info) || !nzchar(trimws(gb$publicacion_info))) "No disponible" else trimws(gb$publicacion_info)
   accession_txt <- if (is.na(gb$id_acceso) || !nzchar(trimws(gb$id_acceso))) "No disponible" else as.character(trimws(gb$id_acceso))
+
+  if (similitud > 0 && similitud < umbral_similitud) {
+    aviso_baja <- paste0("Baja similitud (<", umbral_similitud, "%)")
+    especie_txt <- aviso_baja
+    familia_txt <- aviso_baja
+  }
 
   resultados[[i]] <- data.frame(
     ID_Secuencia      = nombre_sec,
@@ -265,6 +272,10 @@ for (i in seq_len(n_total)) {
     Accession_GenBank = accession_txt,
     stringsAsFactors  = FALSE
   )
+
+  if (i < n_total) {
+    Sys.sleep(10)
+  }
 }
 
 tabla_final <- dplyr::bind_rows(resultados)
