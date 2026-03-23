@@ -34,6 +34,13 @@ library(ape)
 library(rentrez)
 library(annotate)
 
+generar_nombre_salida <- function(nombre_base, extension = ".csv", directorio = ".") {
+  fecha_hoy <- format(Sys.Date(), "%Y%m%d")
+  patron <- paste0("^", nombre_base, "_", fecha_hoy, "_run[0-9]+", extension, "$")
+  archivos <- list.files(path = directorio, pattern = patron)
+  return(file.path(directorio, paste0(nombre_base, "_", fecha_hoy, "_run", length(archivos) + 1, extension)))
+}
+
 # -----------------------------------------------------------------------------
 # PARTE 2: ENTRADA DE DATOS
 # -----------------------------------------------------------------------------
@@ -281,17 +288,23 @@ for (i in seq_len(n_total)) {
 tabla_final <- dplyr::bind_rows(resultados)
 
 # -----------------------------------------------------------------------------
-# PARTE 5: EXPORTAR RESULTADOS
+# PARTE 5: EXPORTAR RESULTADOS (VERSIONADO AUTOMÁTICO)
 # -----------------------------------------------------------------------------
-# Nombre por defecto: Resultados_Identificacion_GenBank.csv
-# Si el archivo ya existe en la carpeta, se añade la fecha al nombre para no sobrescribir.
 
-nombre_base <- "Resultados_Identificacion_GenBank.csv"
-ruta_csv_final <- file.path(ruta_destino, nombre_base)
-if (file.exists(ruta_csv_final)) {
-  nombre_fecha <- paste0("Resultados_Identificacion_GenBank_", format(Sys.Date(), "%Y_%m_%d"), ".csv")
-  ruta_csv_final <- file.path(ruta_destino, nombre_fecha)
+# Función para auto-incrementar el número de run
+generar_nombre_salida <- function(nombre_base, extension = ".csv", directorio = ".") {
+  fecha_hoy <- format(Sys.Date(), "%Y%m%d")
+  patron <- paste0("^", nombre_base, "_", fecha_hoy, "_run[0-9]+", extension, "$")
+  archivos <- list.files(path = directorio, pattern = patron)
+  run_actual <- length(archivos) + 1
+  return(file.path(directorio, paste0(nombre_base, "_", fecha_hoy, "_run", run_actual, extension)))
 }
+
+# Generar ruta y exportar
+ruta_csv_final <- generar_nombre_salida("Resultados_Identificacion_GenBank", extension = ".csv", directorio = ruta_destino)
 write.csv(tabla_final, ruta_csv_final, row.names = FALSE, fileEncoding = "UTF-8")
-cat("\n  Resultados guardados en:\n    ", ruta_csv_final, "\n", sep = "")
-print(tabla_final)
+
+message("\n==================================================")
+message("¡Búsqueda finalizada! Resultados guardados en:")
+message(ruta_csv_final)
+message("==================================================")
