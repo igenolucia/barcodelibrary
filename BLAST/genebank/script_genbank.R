@@ -241,7 +241,7 @@ obtener_mejor_genbank <- function(secuencia) {
 # y acumulación de filas para la tabla final.
 
 resultados <- vector("list", n_total)
-umbral_similitud <- 90
+umbral_similitud <- 80
 
 for (i in seq_len(n_total)) {
   nombre_sec <- nombres_secuencias[i]

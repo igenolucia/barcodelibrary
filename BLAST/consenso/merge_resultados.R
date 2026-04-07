@@ -6,13 +6,21 @@
 # en un único dataframe, filtra hits sin información taxonómica útil y selecciona
 # el mejor hit por secuencia (mayor similitud; desempate: especie > familia, BOLD).
 #
-# Columnas esperadas en ambos CSV (idénticas) + Fuente en salida:
-#   Secuencia, Familia, Especie_Sugerida, Similitud_Porcentaje, Codigo_Acceso, Localizacion, Fuente
+# Columnas esperadas en ambos CSV (idénticas) + columna añadida en salida:
+#   Secuencia, Familia, Especie_Sugerida, Similitud_Porcentaje, Codigo_Acceso, Localizacion, Fuente,
+#   Observaciones
 #
 # Uso: ejecutar el script; se abrirán ventanas para elegir archivos y carpeta de salida.
 # Dependencias: dplyr; tcltk (solo para elegir carpeta en sistemas no Windows).
 #
 # =============================================================================
+
+generar_nombre_salida <- function(nombre_base, extension = ".csv", directorio = ".") {
+  fecha_hoy <- format(Sys.Date(), "%Y%m%d")
+  patron <- paste0("^", nombre_base, "_", fecha_hoy, "_run[0-9]+", extension, "$")
+  archivos <- list.files(path = directorio, pattern = patron)
+  return(file.path(directorio, paste0(nombre_base, "_", fecha_hoy, "_run", length(archivos) + 1, extension)))
+}
 
 # -----------------------------------------------------------------------------
 # 1. SELECCIÓN INTERACTIVA DE ARCHIVOS Y CARPETA DE SALIDA
@@ -39,7 +47,7 @@ if (length(ruta_bold) == 0 || !nzchar(ruta_bold)) {
 }
 
 cat(">>> Ahora selecciona la CARPETA donde quieres guardar el archivo de resultados.\n")
-cat("    El archivo se guardará con el nombre: Resultados_Consenso_GenBank_BOLD.csv\n\n")
+cat("    El archivo se guardará con el nombre: Resultados_Consenso_YYYYMMDD_runX.csv\n\n")
 # choose.dir() existe en Windows; en otros sistemas se usa tcltk
 if (exists("choose.dir") && is.function(get("choose.dir", mode = "function"))) {
   carpeta_salida <- choose.dir()
@@ -52,12 +60,13 @@ if (exists("choose.dir") && is.function(get("choose.dir", mode = "function"))) {
 if (length(carpeta_salida) == 0 || is.na(carpeta_salida) || !nzchar(carpeta_salida)) {
   stop("No se seleccionó ninguna carpeta de destino. Ejecución cancelada.")
 }
-ruta_salida <- file.path(carpeta_salida, "Resultados_Consenso_GenBank_BOLD.csv")
+directorio_salida <- carpeta_salida
+ruta_salida <- NA_character_
 
 cat("\nArchivos y carpeta seleccionados:\n")
 cat("  GenBank:", ruta_genbank, "\n")
 cat("  BOLD:   ", ruta_bold, "\n")
-cat("  Salida: ", ruta_salida, "\n\n")
+cat("  Salida: ", directorio_salida, "\n\n")
 
 columnas_esperadas <- c(
   "Secuencia",
@@ -68,6 +77,7 @@ columnas_esperadas <- c(
   "Localizacion",
   "Fuente"
 )
+columnas_salida <- c(columnas_esperadas, "Observaciones")
 
 # -----------------------------------------------------------------------------
 # 2. CARGA DE PAQUETES
@@ -88,6 +98,9 @@ ungroup  <- dplyr::ungroup
 bind_rows <- dplyr::bind_rows
 across   <- dplyr::across
 if_else  <- dplyr::if_else
+left_join <- dplyr::left_join
+full_join <- dplyr::full_join
+case_when <- dplyr::case_when
 
 # -----------------------------------------------------------------------------
 # 3. FUNCIONES AUXILIARES
@@ -171,45 +184,145 @@ cat("Filas tras filtrar (al menos Familia o Especie_Sugerida válidos):", nrow(u
     "(eliminadas:", antes_filtro - nrow(union_df), ")\n")
 
 # -----------------------------------------------------------------------------
-# 6. MEJOR HIT POR SECUENCIA
+# 6. DISCREPANCIAS ENTRE FUENTES + RESCATE DE LOCALIZACION
 # -----------------------------------------------------------------------------
-# - Agrupar por Secuencia.
-# - Orden de prioridad: 1) Mayor Similitud_Porcentaje, 2) tener especie > solo familia, 3) BOLD por defecto.
+# Antes de seleccionar el "Mejor Hit" final (slice(1)), preparamos:
+# - Localizacion de cada fuente (siempre que exista), para rescatar si el mejor hit final queda con NA/"No disponible".
+# - Observaciones: se calcula justo antes del slice dentro del bloque group_by + arrange.
 
+# Normalización de similitud para evitar que NA arruinen el orden.
 union_df <- union_df %>%
   mutate(
+    Similitud_Porcentaje_orden = if_else(is.na(.data$Similitud_Porcentaje), -Inf, .data$Similitud_Porcentaje)
+  )
+
+# Resumen representativo de Localizacion por secuencia y fuente (sin seleccionar el "Mejor Hit" global aún).
+per_fuente_localizacion <- union_df %>%
+  group_by(.data$Secuencia, .data$Fuente) %>%
+  summarise(
+    Localizacion_mejor_fuente = {
+      d <- dplyr::cur_data_all()
+      d <- d[order(-d$Similitud_Porcentaje_orden), , drop = FALSE]
+      loc_ok <- !is.na(d$Localizacion) &
+        nzchar(trimws(as.character(d$Localizacion))) &
+        tolower(trimws(as.character(d$Localizacion))) != "no disponible"
+      d_valid <- d[loc_ok, , drop = FALSE]
+      if (nrow(d_valid) > 0) as.character(d_valid$Localizacion[1]) else NA_character_
+    },
+    .groups = "drop"
+  )
+
+genbank_fuente <- per_fuente_localizacion %>%
+  filter(.data$Fuente == "GenBank") %>%
+  select(.data$Secuencia, Localizacion_GenBank = .data$Localizacion_mejor_fuente)
+
+bold_fuente <- per_fuente_localizacion %>%
+  filter(.data$Fuente == "BOLD") %>%
+  select(.data$Secuencia, Localizacion_BOLD = .data$Localizacion_mejor_fuente)
+
+localizacion_fuentes <- full_join(
+  genbank_fuente,
+  bold_fuente,
+  by = "Secuencia"
+)
+
+# -----------------------------------------------------------------------------
+# 7. MEJOR HIT POR SECUENCIA (con jerarquía de decisión)
+# -----------------------------------------------------------------------------
+# Jerarquía:
+# 1) Mayor Similitud_Porcentaje.
+# 2) Información a nivel de Especie (frente a solo Familia o "No disponible").
+# 3) En caso de empate, priorizar BOLD.
+
+union_df_mejor <- union_df %>%
+  mutate(
     tiene_especie = .data$Especie_Sugerida_ok,
-    # Para ordenar: BOLD primero en desempate (1 = BOLD, 0 = GenBank)
     orden_fuente  = as.integer(.data$Fuente == "BOLD")
   ) %>%
   group_by(.data$Secuencia) %>%
   arrange(
-    desc(.data$Similitud_Porcentaje),
+    desc(.data$Similitud_Porcentaje_orden),
     desc(.data$tiene_especie),
     desc(.data$orden_fuente),
     .by_group = TRUE
   ) %>%
+  mutate(
+    Observaciones = {
+      valid_idx <- which(.data$Especie_Sugerida_ok)
+      if (n() > 1 && length(valid_idx) > 1) {
+        first_i <- valid_idx[1]
+        last_i  <- valid_idx[length(valid_idx)]
+        esp_first <- as.character(.data$Especie_Sugerida[first_i])
+        esp_last  <- as.character(.data$Especie_Sugerida[last_i])
+        if (!is.na(esp_first) && !is.na(esp_last) && esp_first != esp_last) {
+          fuente_perdedora <- as.character(.data$Fuente[last_i])
+          especie_perdedora <- esp_last
+          similitud_perdedora <- .data$Similitud_Porcentaje[last_i]
+          paste0(
+            "Discordancia: ",
+            fuente_perdedora,
+            " sugiere ",
+            especie_perdedora,
+            " (",
+            similitud_perdedora,
+            "%)"
+          )
+        } else {
+          "No hay discordancia"
+        }
+      } else {
+        "No hay discordancia"
+      }
+    }
+  ) %>%
   slice(1L) %>%
   ungroup()
 
-# Eliminar columnas auxiliares y dejar solo las columnas de salida (incluye Fuente)
-resultado_final <- union_df %>%
-  select(all_of(columnas_esperadas))
+# Eliminar columnas auxiliares y dejar solo columnas de salida (incluye Fuente y Observaciones)
+resultado_final <- union_df_mejor %>%
+  left_join(localizacion_fuentes, by = "Secuencia") %>%
+  mutate(
+    # Rescate de Localizacion: si el mejor hit final tiene NA/"No disponible",
+    # usamos la Localizacion disponible de la otra fuente.
+    Localizacion = case_when(
+      !es_valido(.data$Localizacion) & .data$Fuente == "GenBank" & es_valido(.data$Localizacion_BOLD) ~ .data$Localizacion_BOLD,
+      !es_valido(.data$Localizacion) & .data$Fuente == "BOLD" & es_valido(.data$Localizacion_GenBank) ~ .data$Localizacion_GenBank,
+      TRUE ~ .data$Localizacion
+    )
+  ) %>%
+  select(all_of(columnas_salida))
 
 cat("Número de secuencias en el consenso (mejor hit por secuencia):", nrow(resultado_final), "\n")
 
 # -----------------------------------------------------------------------------
-# 7. EXPORTAR RESULTADO
+# 8. EXPORTAR RESULTADO (con versionado dinámico)
 # -----------------------------------------------------------------------------
 # Asegurar que no queden NA en columnas de texto (opcional: reemplazar por "No disponible")
 resultado_final <- resultado_final %>%
   mutate(across(
     c(Familia, Especie_Sugerida, Codigo_Acceso, Localizacion),
     ~ if_else(is.na(.) | !nzchar(trimws(as.character(.))), "No disponible", as.character(.))
-  ))
+  )) %>%
+  # FILTRO RADICAL: Nos quedamos única y exclusivamente con las 8 columnas oficiales
+  select(
+    Secuencia,
+    Familia,
+    Especie_Sugerida,
+    Similitud_Porcentaje,
+    Codigo_Acceso,
+    Localizacion,
+    Fuente,
+    Observaciones
+  )
 
-# La carpeta ya fue elegida por el usuario; por si acaso se asegura que exista
-if (!dir.exists(carpeta_salida)) dir.create(carpeta_salida, recursive = TRUE)
+# Generar nombre de salida versionado dinámico
+if (!dir.exists(directorio_salida)) dir.create(directorio_salida, recursive = TRUE)
+ruta_salida <- generar_nombre_salida(
+  nombre_base = "Resultados_Consenso",
+  extension = ".csv",
+  directorio = directorio_salida
+)
+
 write.csv(resultado_final, ruta_salida, row.names = FALSE, fileEncoding = "UTF-8")
 
 cat("\nResultado guardado en:\n  ", ruta_salida, "\n", sep = "")
