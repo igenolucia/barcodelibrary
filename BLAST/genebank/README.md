@@ -39,5 +39,6 @@ Al ejecutar el script, se genera una **tabla** estructurada bajo el protocolo de
 * **Umbral de Calidad (Threshold)**: El script incluye un umbral de identidad configurable, establecido por defecto al **80%**. Si una secuencia no alcanza este porcentaje de similitud, la tabla registrará automáticamente *"Baja similitud (<80%)"* en las columnas de Especie y Familia.
 * **Flexibilidad:** Este parámetro de umbral (`umbral_similitud = 80`) es totalmente modificable en el código para adaptarse a diferentes grupos taxonómicos o niveles de conservadurismo (ej. aumentarlo al 97% para identificaciones a nivel de especie más estrictas).
 
+
 ---
 **Desarrollado por Lucía Igeño** - 2026
