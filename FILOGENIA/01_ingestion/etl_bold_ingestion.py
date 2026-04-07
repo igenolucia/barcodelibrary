@@ -3,7 +3,7 @@
 # =============================================================================
 # Flujo: Conexión asíncrona a la API de BOLD (BCDM), descarga masiva en JSONL,
 # extracción de secuencias limpias de gaps (-) y metadatos.
-# Conserva intencionalmente registros 'Unknown' para análisis de especies crípticas.
+# Conserva intencionalmente registros 'Unknown' en la taxonomía para análisis filogenéticos (especies crípticas, errores de identificación).
 # Genera archivos gemelos estandarizados (CSV y FASTA).
 # =============================================================================
 
@@ -88,7 +88,7 @@ def _underscore_spaces(value: Any) -> str:
     return re.sub(r"\s+", "_", s) if s else "Unknown"
 
 # -----------------------------------------------------------------------------
-# 2. FUNCIONES AUXILIARES Y VERSIONADO (PREVENCIÓN DE SOBREESCRITURA)
+# 2. FUNCIONES AUXILIARES Y VERSIONADO
 # -----------------------------------------------------------------------------
 # Generación de sufijos _runN para inmutabilidad de datos.
 

@@ -1,0 +1,65 @@
+# Phylogeny Tool - Data Ingestion (BOLD Systems & NCBI GenBank)
+
+Herramientas ETL (Extract, Transform, Load) diseñadas para la descarga masiva, estandarización y curación de secuencias genéticas desde las dos bases de datos globales principales: BOLD Systems y GenBank (NCBI).
+
+### ¿Para qué sirven estos scripts?
+
+A diferencia de las búsquedas locales o descargas manuales, esta herramienta automatiza la fase de **ingesta de datos filogenéticos**. Al introducir un taxón (ej. *Pulchellodromus*), los scripts se conectan directamente a las APIs oficiales (BOLD Data Portal y NCBI Entrez), extraen todas las secuencias públicas disponibles junto con sus metadatos (taxonomía y geografía), y las limpian automáticamente (descartando registros sin secuencia de ADN y purgando gaps de alineamientos previos).
+
+Generan archivos estandarizados listos para realizar alineamientos múltiples de secuencias (AMS) en software como Geneious.
+
+### Contenido del Repositorio
+
+* `etl_bold_ingestion.py`: Genera la conexión asíncrona en 3 pasos con la API de BOLD (formato BCDM/JSONL), filtra los datos nulos e inyecta la información en los formatos operativos.
+* `etl_ncbi_ingestion.py`: Conecta con la API de GenBank (Entrez). Descarga el registro completo (XML) para evitar la pérdida de metadatos del formato FASTA básico, aplicando una "red de arrastre" para localizar la geografía oculta en las entrañas del registro.
+* `requirements.txt`: Manifiesto estricto de dependencias. Garantiza que los scripts se ejecuten de forma 100% reproducible en cualquier ordenador.
+
+### 🚀 Guía Rápida de Uso
+
+Para ejecutar este flujo de trabajo, asegúrate de tener **Python 3** instalado. Se recomienda utilizar un entorno virtual (como `conda` o `venv`) para no interferir con las librerías de tu equipo.
+
+Abre tu terminal (Anaconda Prompt) y sigue estos pasos:
+
+1. **Activación del Entorno (Ejemplo con Conda):**
+   ```bash
+   conda activate nombre_entorno
+   ```
+
+2. **Instalación de Dependencias (Solo la primera vez):**
+   Instala las librerías requeridas utilizando el manifiesto del proyecto.
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+3. **Ejecución (Elige tu motor de búsqueda):**
+   Para buscar en BOLD Systems:
+   ```bash
+   python etl_bold_ingestion.py
+   ```
+   Para buscar en NCBI / GenBank:
+   ```bash
+   python etl_ncbi_ingestion.py
+   ```
+
+4. **Filtro interactivo:** El programa abrirá ventanas emergentes nativas pidiéndote que introduzcas el nombre del taxón a buscar y la carpeta de destino. *Nota: El script de NCBI te pedirá además un correo electrónico, recomendado para prevenir bloqueos -los datos personales no se guardarán-.*
+
+5. **Resultado:** El sistema negociará con la API correspondiente y generará los archivos automáticamente aplicando control de versionado (añadiendo la fecha y sufijos como `_run1` si la carpeta ya contiene descargas previas) para evitar la pérdida de datos.
+
+### ¿Qué resultado devuelven?
+
+Al ejecutar cualquiera de los dos scripts, se generan dos "archivos gemelos" vinculados para garantizar la observabilidad de los datos:
+
+1. **Archivo Operativo (.fasta):** Secuencias genéticas crudas listas para algoritmos de alineamiento como MAFFT. El encabezado se formatea automáticamente usando barras verticales para que Geneious separe los metadatos en columnas:
+   `>processid|species_name|country`
+
+2. **Archivo Forense (.csv):** Tabla estructurada para auditoría visual con las siguientes columnas unificadas:
+   * `processid`: Identificador único de la muestra (Process ID en BOLD o Accession en NCBI).
+   * `species_name`: Nombre del taxón.
+   * `country`: País, región de origen o localización del espécimen.
+   * `nucleotides`: La secuencia de ADN limpia.
+
+### ⚠️ Importante
+
+* **Recomendación - Conservación de Datos:** El pipeline clasifica intencionalmente la ausencia de datos geográficos o taxonómicos como `Unknown` en lugar de borrarlos del output. Una secuencia catalogada como "Pulchellodromus sp." o "Unknown" podría ser genéticamente idéntica a linajes endémicos no descritos, por lo que es útil taxonómicamente conservarla para la evaluación en el árbol filogenético.
+* **Geografía no estandarizada en GenBank:** A diferencia de BOLD, NCBI no obliga a incluir la localización en formatos específicos. Por ello, el script `etl_ncbi_ingestion.py` actúa buscando datos de localización de forma priorizada en las etiquetas `geo_loc_name`, `country`, `isolation_source` o `locality`.
+* **Resiliencia y Manejo de RAM:** El script de BOLD procesa los datos línea por línea (JSON Lines) y ambos scripts incorporan lógicas de reintentos o descargas por lotes (batches). Esto evita colapsar la memoria de tu equipo o ser bloqueado por las APIs al solicitar taxones masivos.
