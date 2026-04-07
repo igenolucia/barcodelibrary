@@ -256,7 +256,7 @@ for (i in seq_len(n_total)) {
   similitud <- if (length(gb$similitud) == 1 && !is.na(gb$similitud)) gb$similitud else 0
   cat(sprintf('\rProcesando secuencia %d/%d... (Analizando: %s)', i, n_total, nombre_sec))
 
-  # Protocolo CSIC: ninguna celda vacía ni NA; usar 'No disponible' cuando falte el dato
+  # Protocolo estándar: ninguna celda vacía ni NA; usar 'No disponible' cuando falte el dato
   especie_txt   <- if (is.na(gb$especie) || !nzchar(trimws(gb$especie))) "No disponible" else trimws(gb$especie)
   familia_txt   <- if (is.na(gb$familia) || !nzchar(trimws(gb$familia))) "No disponible" else trimws(gb$familia)
   localidad_txt <- if (is.na(gb$localidad) || !nzchar(trimws(gb$localidad))) "No disponible" else trimws(gb$localidad)
