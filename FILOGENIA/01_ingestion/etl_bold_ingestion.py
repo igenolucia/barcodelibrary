@@ -1,8 +1,11 @@
-"""
-ETL para descargar secuencias y metadatos desde el BOLD Data Portal (API JSON/BCDM).
-
-Dependencias: ``requests``, ``pandas`` (``pip install requests pandas``).
-"""
+# =============================================================================
+# SCRIPT: Ingesta de datos filogenéticos desde BOLD Systems
+# =============================================================================
+# Flujo: Conexión asíncrona a la API de BOLD (BCDM), descarga masiva en JSONL,
+# extracción de secuencias limpias de gaps (-) y metadatos.
+# Conserva intencionalmente registros 'Unknown' para análisis de especies crípticas.
+# Genera archivos gemelos estandarizados (CSV y FASTA).
+# =============================================================================
 
 from __future__ import annotations
 
@@ -20,7 +23,10 @@ import requests
 import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog
 
-# --- Constantes ---------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+# 1. IMPORTACIÓN DE PAQUETES Y CONSTANTES
+# -----------------------------------------------------------------------------
+# Definimos umbrales de reintento y tiempos de espera para evitar bloqueos por rate-limit.
 
 PORTAL_BASE: Final[str] = "https://portal.boldsystems.org/api/"
 URL_PREPROCESSOR: Final[str] = urljoin(PORTAL_BASE, "query/preprocessor")
@@ -59,7 +65,7 @@ _SEQ_KEYS: Final[tuple[str, ...]] = (
 
 
 def _configure_logging() -> None:
-    """Configura el registro de eventos en consola con formato uniforme."""
+    # Logging estructurado para trazabilidad (en lugar de print()).
     if logging.getLogger().handlers:
         return
     logging.basicConfig(
@@ -70,32 +76,25 @@ def _configure_logging() -> None:
 
 
 def _sanitize_filename_token(name: str) -> str:
-    """Convierte una cadena en un fragmento seguro para nombres de archivo en Windows."""
+    # Sanea caracteres no válidos en nombres de archivo (Windows).
     cleaned = re.sub(r'[<>:"/\\|?*]', "_", name.strip())
     cleaned = re.sub(r"\s+", "_", cleaned)
     return cleaned or "BOLD_export"
 
 
 def _underscore_spaces(value: Any) -> str:
-    """Reemplaza espacios por guiones bajos para encabezados FASTA (especie/país)."""
+    # Encabezados FASTA: evitar espacios (compatibilidad con herramientas).
     s = "Unknown" if pd.isna(value) else str(value).strip()
     return re.sub(r"\s+", "_", s) if s else "Unknown"
 
+# -----------------------------------------------------------------------------
+# 2. FUNCIONES AUXILIARES Y VERSIONADO (PREVENCIÓN DE SOBREESCRITURA)
+# -----------------------------------------------------------------------------
+# Generación de sufijos _runN para inmutabilidad de datos.
+
 
 def get_unique_filepath(base_dir: Path, base_name: str, ext: str) -> Path:
-    """Devuelve una ruta única con fecha y sufijo de ejecución para evitar sobreescritura.
-
-    La ruta se construye como:
-        ``{base_name}_BOLD_{YYYYMMDD}{ext}`` o ``{base_name}_BOLD_{YYYYMMDD}_runN{ext}``
-
-    Args:
-        base_dir: Directorio destino.
-        base_name: Nombre base (normalmente el taxón saneado).
-        ext: Extensión incluyendo el punto (por ejemplo ``.csv`` o ``.fasta``).
-
-    Returns:
-        Ruta que no existe todavía en disco.
-    """
+    # Fecha + _runN: evita sobreescritura y mantiene ejecuciones inmutables.
     date_tag = datetime.now().strftime("%Y%m%d")
     base = f"{base_name}_BOLD_{date_tag}"
 
@@ -112,7 +111,7 @@ def get_unique_filepath(base_dir: Path, base_name: str, ext: str) -> Path:
 
 
 def _get_unique_twin_filepaths(base_dir: Path, base_name: str) -> tuple[Path, Path]:
-    """Obtiene rutas únicas para CSV y FASTA compartiendo el mismo sufijo run."""
+    # CSV y FASTA deben compartir el mismo _runN (archivos gemelos).
     csv_path = get_unique_filepath(base_dir, base_name, ".csv")
     fasta_path = csv_path.with_suffix(".fasta")
 
@@ -135,7 +134,7 @@ def _get_unique_twin_filepaths(base_dir: Path, base_name: str) -> tuple[Path, Pa
 
 
 def ask_taxon_gui(root: tk.Tk) -> Optional[str]:
-    """Solicita al usuario el nombre del taxón mediante un diálogo modal."""
+    # Entrada GUI: taxón (se envía al preprocesador de BOLD).
     taxon = simpledialog.askstring(
         title="BOLD ETL — Taxón",
         prompt="Escribe el nombre del taxón a buscar (ej. Pulchellodromus):",
@@ -148,7 +147,7 @@ def ask_taxon_gui(root: tk.Tk) -> Optional[str]:
 
 
 def ask_output_directory_gui(root: tk.Tk) -> Optional[str]:
-    """Abre un selector de carpeta para el directorio de salida."""
+    # Se elige carpeta porque se generan dos outputs gemelos (CSV + FASTA).
     path = filedialog.askdirectory(
         title="Selecciona el directorio de destino para CSV y FASTA",
         parent=root,
@@ -157,9 +156,16 @@ def ask_output_directory_gui(root: tk.Tk) -> Optional[str]:
 
 
 def _http_log_snippet(response: requests.Response, max_len: int = 300) -> str:
-    """Primeros caracteres del cuerpo de respuesta para auditoría (una línea)."""
+    # Recorte del cuerpo HTTP para auditoría en logs (evita volcar MBs al terminal).
     text = response.text or ""
     return text[:max_len].replace("\n", "\\n")
+
+
+# -----------------------------------------------------------------------------
+# 3. CONEXIÓN A LA API DE BOLD (FLUJO DE 3 PASOS)
+# -----------------------------------------------------------------------------
+# La API requiere 3 fases: enviar taxón al preprocesador, resolver el ticket (query_id) y
+# descargar el archivo JSON Lines. Usamos JSONL para no colapsar la RAM.
 
 
 def portal_get(
@@ -169,21 +175,7 @@ def portal_get(
     params: Optional[Mapping[str, Any]] = None,
     step_name: str = "GET",
 ) -> requests.Response:
-    """GET con reintentos ante timeout y errores 500 del portal.
-
-    Args:
-        url: URL completa.
-        session: Sesión ``requests``.
-        params: Parámetros de consulta.
-        step_name: Etiqueta para logs.
-
-    Returns:
-        Objeto ``Response`` con código 2xx.
-
-    Raises:
-        requests.HTTPError: Tras agotar reintentos o ante 4xx no recuperables.
-        requests.RequestException: Errores de red tras agotar reintentos.
-    """
+    # GET robusto: reintenta timeouts/500, registra recortes y falla rápido en 4xx.
     last_error: Optional[BaseException] = None
     for attempt in range(1, MAX_RETRIES + 1):
         try:
@@ -255,7 +247,7 @@ def portal_get(
 
 
 def _extract_query_id(obj: Any) -> Optional[str]:
-    """Busca un identificador de consulta en la respuesta JSON del paso 2."""
+    # Extrae query_id de JSON (BOLD puede variar la clave según endpoint/versión).
     if obj is None:
         return None
     if isinstance(obj, str) and obj.strip():
@@ -285,21 +277,7 @@ def _extract_query_id(obj: Any) -> Optional[str]:
 
 
 def _validated_query_from_preprocessor(data1: Any) -> str:
-    """Construye el parámetro ``query`` del paso 2 a partir del JSON del preprocesador.
-
-    BOLD devuelve términos validados en ``successful_terms``; cada elemento incluye
-    ``matched`` (p. ej. ``tax:genus:Pulchellodromus``). El endpoint ``/api/query``
-    espera esos términos unidos por punto y coma, no JSON serializado.
-
-    Args:
-        data1: Objeto JSON del GET ``/api/query/preprocessor``.
-
-    Returns:
-        Cadena con uno o más términos ``matched`` separados por ``;``.
-
-    Raises:
-        ValueError: Si no hay términos validados utilizables.
-    """
+    # El preprocesador devuelve términos validados; /api/query exige esos términos unidos por ';'.
     if not isinstance(data1, dict):
         raise ValueError(
             "El preprocesador de BOLD no validó el taxón. Verifica que esté bien escrito."
@@ -324,7 +302,7 @@ def _validated_query_from_preprocessor(data1: Any) -> str:
 
 
 def _iter_json_lists(obj: Any) -> Iterator[list[Any]]:
-    """Localiza listas candidatas (registros) en estructuras JSON anidadas."""
+    # Recorre JSON anidado para localizar listas candidatas de registros.
     if isinstance(obj, list):
         yield obj
         for item in obj:
@@ -335,7 +313,7 @@ def _iter_json_lists(obj: Any) -> Iterator[list[Any]]:
 
 
 def _pick_record_list(payload: Any) -> list[dict[str, Any]]:
-    """Elige la lista de dicts más prometedora como filas BCDM."""
+    # Selecciona la lista de dicts más prometedora como filas BCDM.
     if isinstance(payload, list) and payload and isinstance(payload[0], dict):
         return [x for x in payload if isinstance(x, dict)]
 
@@ -348,12 +326,12 @@ def _pick_record_list(payload: Any) -> list[dict[str, Any]]:
 
 
 def _norm_col_key(name: str) -> str:
-    """Normaliza nombre de columna para emparejar alias BCDM (p. ej. country/ocean)."""
+    # Normaliza claves para emparejar alias BCDM (p. ej. country/ocean).
     return re.sub(r"[/\s]+", "_", str(name).strip().lower())
 
 
 def _bcdm_json_to_dataframe(payload: Any) -> pd.DataFrame:
-    """Convierte el JSON BCDM descargado en un DataFrame tabular."""
+    # BCDM → DataFrame: normaliza registros y aplana claves comunes.
     if payload is None or (isinstance(payload, dict) and not payload):
         logging.warning("JSON vacío o nulo tras la descarga.")
         return pd.DataFrame()
@@ -399,7 +377,7 @@ def _bcdm_json_to_dataframe(payload: Any) -> pd.DataFrame:
 
 
 def _first_matching_column(df: pd.DataFrame, candidates: tuple[str, ...]) -> Optional[str]:
-    """Devuelve el nombre de columna presente en ``df`` (alias BCDM flexibles)."""
+    # Resuelve columnas por alias BCDM (nombres pueden variar entre descargas).
     norm_map = {_norm_col_key(str(c)): c for c in df.columns}
     for cand in candidates:
         for variant in (cand, cand.replace("/", "_")):
@@ -414,7 +392,7 @@ def _first_matching_column(df: pd.DataFrame, candidates: tuple[str, ...]) -> Opt
 
 
 def _sequence_from_row(row: pd.Series) -> str:
-    """Obtiene la secuencia nucleotídica de una fila si no hubo columna dedicada."""
+    # Fallback: extrae secuencia buscando claves candidatas en la fila.
     for name in row.index:
         ln = str(name).lower()
         if not any(
@@ -439,25 +417,7 @@ def _sequence_from_row(row: pd.Series) -> str:
 
 
 def fetch_bold_portal_json(taxon: str, session: Optional[requests.Session] = None) -> pd.DataFrame:
-    """Ejecuta el flujo de 3 pasos del portal BOLD y devuelve un DataFrame BCDM.
-
-    Pasos:
-        1. GET ``/api/query/preprocessor?query=tax:<taxon>``
-        2. GET ``/api/query?query=<términos validados>&extent=full`` → ``query_id``
-        3. GET ``/api/documents/<query_id>/download?format=json``
-
-    Args:
-        taxon: Término taxonómico (sin el prefijo ``tax:``).
-        session: Sesión HTTP opcional.
-
-    Returns:
-        DataFrame con columnas BCDM aplanadas (puede estar vacío).
-
-    Raises:
-        requests.HTTPError: Errores HTTP no resueltos tras reintentos.
-        ValueError: JSON inválido, taxón no validado por el preprocesador, sin
-            ``query_id``, o cuerpo vacío.
-    """
+    # Flujo 3 pasos: preprocessor → query(query_id) → download(JSONL) → DataFrame.
     sess = session or requests.Session()
     q = f"tax:{taxon.strip()}"
 
@@ -543,8 +503,14 @@ def fetch_bold_portal_json(taxon: str, session: Optional[requests.Session] = Non
     return df
 
 
+# -----------------------------------------------------------------------------
+# 4. CURACIÓN, EXTRACCIÓN DE METADATOS Y LIMPIEZA
+# -----------------------------------------------------------------------------
+# Se conservan los taxones 'Unknown' para no perder diversidad críptica. Se eliminan
+# los gaps '-' de las secuencias para que MAFFT haga alineamientos de novo limpios.
+
 def curate_bold_dataframe(raw: pd.DataFrame) -> pd.DataFrame:
-    """Filtra filas con secuencia y unifica columnas para CSV/FASTA."""
+    # Curación BCDM: filtra sin secuencia y normaliza campos clave.
     if raw.empty:
         return raw.copy()
 
@@ -612,15 +578,19 @@ def curate_bold_dataframe(raw: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
+# -----------------------------------------------------------------------------
+# 5. EXPORTACIÓN A FASTA/CSV Y EJECUCIÓN PRINCIPAL
+# -----------------------------------------------------------------------------
+
 def export_metadata_csv(df: pd.DataFrame, output_path: str) -> None:
-    """Escribe el CSV de metadatos con codificación UTF-8."""
+    # CSV “forense”: tabla de metadatos + secuencia por registro.
     export_cols = ["processid", "species_name", "country", "nucleotides"]
     df[export_cols].to_csv(output_path, index=False, encoding="utf-8")
     logging.info("Metadatos guardados en: %s", output_path)
 
 
 def export_fasta(df: pd.DataFrame, output_path: str) -> None:
-    """Genera FASTA con encabezados ``>processid|species_name|country``."""
+    # FASTA “operativo”: encabezado compatible con BOLD -> >processid|species_name|country
     lines: list[str] = []
     for _, row in df.iterrows():
         pid = "Unknown" if pd.isna(row["processid"]) else str(row["processid"]).strip()
@@ -641,7 +611,7 @@ def export_fasta(df: pd.DataFrame, output_path: str) -> None:
 
 
 def run_pipeline() -> int:
-    """Orquesta diálogos, descarga portal, curación y archivos gemelos."""
+    # Ejecución principal: GUI → BOLD API → curación → outputs gemelos versionados.
     _configure_logging()
     root = tk.Tk()
     root.withdraw()
