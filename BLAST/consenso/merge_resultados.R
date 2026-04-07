@@ -184,49 +184,6 @@ cat("Filas tras filtrar (al menos Familia o Especie_Sugerida válidos):", nrow(u
     "(eliminadas:", antes_filtro - nrow(union_df), ")\n")
 
 # -----------------------------------------------------------------------------
-# 6. DISCREPANCIAS ENTRE FUENTES + RESCATE DE LOCALIZACION
-# -----------------------------------------------------------------------------
-# Antes de seleccionar el "Mejor Hit" final (slice(1)), preparamos:
-# - Localizacion de cada fuente (siempre que exista), para rescatar si el mejor hit final queda con NA/"No disponible".
-# - Observaciones: se calcula justo antes del slice dentro del bloque group_by + arrange.
-
-# Normalización de similitud para evitar que NA arruinen el orden.
-union_df <- union_df %>%
-  mutate(
-    Similitud_Porcentaje_orden = if_else(is.na(.data$Similitud_Porcentaje), -Inf, .data$Similitud_Porcentaje)
-  )
-
-# Resumen representativo de Localizacion por secuencia y fuente (sin seleccionar el "Mejor Hit" global aún).
-per_fuente_localizacion <- union_df %>%
-  group_by(.data$Secuencia, .data$Fuente) %>%
-  summarise(
-    Localizacion_mejor_fuente = {
-      d <- dplyr::cur_data_all()
-      d <- d[order(-d$Similitud_Porcentaje_orden), , drop = FALSE]
-      loc_ok <- !is.na(d$Localizacion) &
-        nzchar(trimws(as.character(d$Localizacion))) &
-        tolower(trimws(as.character(d$Localizacion))) != "no disponible"
-      d_valid <- d[loc_ok, , drop = FALSE]
-      if (nrow(d_valid) > 0) as.character(d_valid$Localizacion[1]) else NA_character_
-    },
-    .groups = "drop"
-  )
-
-genbank_fuente <- per_fuente_localizacion %>%
-  filter(.data$Fuente == "GenBank") %>%
-  select(.data$Secuencia, Localizacion_GenBank = .data$Localizacion_mejor_fuente)
-
-bold_fuente <- per_fuente_localizacion %>%
-  filter(.data$Fuente == "BOLD") %>%
-  select(.data$Secuencia, Localizacion_BOLD = .data$Localizacion_mejor_fuente)
-
-localizacion_fuentes <- full_join(
-  genbank_fuente,
-  bold_fuente,
-  by = "Secuencia"
-)
-
-# -----------------------------------------------------------------------------
 # 7. MEJOR HIT POR SECUENCIA (con jerarquía de decisión)
 # -----------------------------------------------------------------------------
 # Jerarquía:
@@ -235,6 +192,10 @@ localizacion_fuentes <- full_join(
 # 3) En caso de empate, priorizar BOLD.
 
 union_df_mejor <- union_df %>%
+  # Normalización de similitud para evitar que NA arruinen el orden.
+  mutate(
+    Similitud_Porcentaje_orden = if_else(is.na(.data$Similitud_Porcentaje), -Inf, .data$Similitud_Porcentaje)
+  ) %>%
   mutate(
     tiene_especie = .data$Especie_Sugerida_ok,
     orden_fuente  = as.integer(.data$Fuente == "BOLD")
@@ -252,21 +213,26 @@ union_df_mejor <- union_df %>%
       if (n() > 1 && length(valid_idx) > 1) {
         first_i <- valid_idx[1]
         last_i  <- valid_idx[length(valid_idx)]
+        
         esp_first <- as.character(.data$Especie_Sugerida[first_i])
         esp_last  <- as.character(.data$Especie_Sugerida[last_i])
+        
+        fuente_perdedora <- as.character(.data$Fuente[last_i])
+        especie_perdedora <- esp_last
+        similitud_perdedora <- .data$Similitud_Porcentaje[last_i]
+        loc_perdedora <- as.character(.data$Localizacion[last_i])
+        
+        # Extraer localización del perdedor si es válida
+        loc_texto <- if(!is.na(loc_perdedora) && nzchar(trimws(loc_perdedora)) && tolower(trimws(loc_perdedora)) != "no disponible") {
+            paste0(" [Loc: ", loc_perdedora, "]")
+        } else {
+            ""
+        }
+        
         if (!is.na(esp_first) && !is.na(esp_last) && esp_first != esp_last) {
-          fuente_perdedora <- as.character(.data$Fuente[last_i])
-          especie_perdedora <- esp_last
-          similitud_perdedora <- .data$Similitud_Porcentaje[last_i]
-          paste0(
-            "Discordancia: ",
-            fuente_perdedora,
-            " sugiere ",
-            especie_perdedora,
-            " (",
-            similitud_perdedora,
-            "%)"
-          )
+          paste0("Discordancia: ", fuente_perdedora, " sugiere ", especie_perdedora, " (", similitud_perdedora, "%)", loc_texto)
+        } else if (loc_texto != "") {
+          paste0("Info extra Hit 2 (", fuente_perdedora, "): ", especie_perdedora, " (", similitud_perdedora, "%)", loc_texto)
         } else {
           "No hay discordancia"
         }
@@ -280,16 +246,6 @@ union_df_mejor <- union_df %>%
 
 # Eliminar columnas auxiliares y dejar solo columnas de salida (incluye Fuente y Observaciones)
 resultado_final <- union_df_mejor %>%
-  left_join(localizacion_fuentes, by = "Secuencia") %>%
-  mutate(
-    # Rescate de Localizacion: si el mejor hit final tiene NA/"No disponible",
-    # usamos la Localizacion disponible de la otra fuente.
-    Localizacion = case_when(
-      !es_valido(.data$Localizacion) & .data$Fuente == "GenBank" & es_valido(.data$Localizacion_BOLD) ~ .data$Localizacion_BOLD,
-      !es_valido(.data$Localizacion) & .data$Fuente == "BOLD" & es_valido(.data$Localizacion_GenBank) ~ .data$Localizacion_GenBank,
-      TRUE ~ .data$Localizacion
-    )
-  ) %>%
   select(all_of(columnas_salida))
 
 cat("Número de secuencias en el consenso (mejor hit por secuencia):", nrow(resultado_final), "\n")
