@@ -232,6 +232,19 @@ def curate_ncbi_dataframe(records: list[dict[str, Any]]) -> pd.DataFrame:
         if not seq or seq.lower() == "nan":
             continue
 
+        # Extraer ID original de BOLD si existe como cruce en db_xref.
+        bold_id: Any = pd.NA
+        for feat in rec.get("GBSeq_feature-table", []):
+            for qual in feat.get("GBFeature_quals", []):
+                if qual.get("GBQualifier_name") != "db_xref":
+                    continue
+                val = str(qual.get("GBQualifier_value", "")).strip()
+                if val.startswith("BOLD:"):
+                    bold_id = val
+                    break
+            if bold_id is not pd.NA:
+                break
+
         # Búsqueda de datos geográficos: el estándar moderno es geo_loc_name, pero también aparecen
         # country / isolation_source / locality. Concatenamos con comas; nunca usar '|' porque
         # '|' es el delimitador del encabezado FASTA y rompería la lectura en Geneious.
@@ -258,6 +271,7 @@ def curate_ncbi_dataframe(records: list[dict[str, Any]]) -> pd.DataFrame:
                 "species_name": sp,
                 "country": country,
                 "nucleotides": seq,
+                "bold_id": bold_id,
             }
         )
     return pd.DataFrame(rows_out)
@@ -265,8 +279,12 @@ def curate_ncbi_dataframe(records: list[dict[str, Any]]) -> pd.DataFrame:
 
 def export_metadata_csv(df: pd.DataFrame, output_path: str) -> None:
     # CSV “forense”: tabla de metadatos + secuencia por registro.
-    export_cols = ["processid", "species_name", "country", "nucleotides"]
-    df[export_cols].to_csv(output_path, index=False, encoding="utf-8")
+    df.to_csv(
+        output_path,
+        index=False,
+        columns=["processid", "species_name", "country", "nucleotides", "bold_id"],
+        encoding="utf-8",
+    )
     logging.info("Metadatos guardados en: %s", output_path)
 
 # -----------------------------------------------------------------------------

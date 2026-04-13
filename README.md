@@ -12,23 +12,29 @@ El proyecto está modularizado para reflejar el orden secuencial de los análisi
 📁 barcodelibrary/
 │
 ├── 📄 README.md                 <-- Documentación principal del proyecto
-├── 📄 .gitignore                
-├── 📄 LICENSE                   
+├── 📄 .gitignore
+├── 📄 LICENSE
 │
-└── 📁 BLAST/                    <-- Fase 1: Consulta automatizada de secuencias
+├── 📁 BLAST/                    <-- Fase 1 (R): Consulta automatizada de secuencias
+│   ├── 📄 README.md
+│   ├── 📁 genbank/
+│   │   ├── 📄 README.md
+│   │   └── 📜 blast_genbank_v1.R
+│   ├── 📁 bold/
+│   │   ├── 📄 README.md
+│   │   ├── 📜 limpiador_fasta.R
+│   │   └── 📜 identificacion_bold.R
+│   └── 📁 consenso/            <-- Unificación y resolución de conflictos (BOLD/NCBI)
+│       ├── 📄 README.md
+│       └── 📜 merge_resultados.R
+│
+└── 📁 FILOGENIA/                <-- Fase 2 (Python): Referencias públicas y filogenia
     ├── 📄 README.md             
     │
-    ├── 📁 genbank/
-    │   ├── 📄 README.md         
-    │   └── 📜 blast_genbank_v1.R   
+    ├── 📁 01_ingestion/         <-- Descarga automatizada (BOLD y NCBI)
+    │   ├── 📜 etl_bold_ingestion.py
+    │   └── 📜 etl_ncbi_ingestion.py
     │
-    ├── 📁 bold/
-    │   ├── 📄 README.md         
-    │   ├── 📜 limpiador_fasta.R    
-    │   └── 📜 identificacion_bold.R
-    │
-    └── 📁 consenso/             <-- Unificación y resolución de conflictos
-        ├── 📄 README.md
-        └── 📜 merge_resultados.R
-
-Las siguientes fases de análisis filogenético y visualización de resultados están en proceso.
+    └── 📁 02_curation/         
+        ├── 📄 README.md         
+        └── 📜 etl_consolidation.py
